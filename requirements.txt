@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+redis
+qdrant-client
+langchain-core
+langchain-community
+langgraph
+httpx
+orjson
+tenacity
+langchain-ollama

@@ -1,0 +1,93 @@
+version: "3.9"
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: cs_ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_KEEP_ALIVE=24h
+
+  ollama-init:
+    image: ollama/ollama:latest
+    container_name: cs_ollama_init
+    depends_on:
+      - ollama
+    volumes:
+      - ollama_data:/root/.ollama
+    entrypoint: >
+      sh -c "
+        ollama pull ${OLLAMA_MODEL_NAME:-qwen3:8b} &&
+        ollama pull ${OLLAMA_EMBED_MODEL_NAME:-embeddinggemma} &&
+        ollama list
+      "
+    restart: "no"
+    environment:
+      - OLLAMA_MODEL_NAME=qwen3:8b
+      - OLLAMA_EMBED_MODEL_NAME=embeddinggemma
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: cs_qdrant
+    restart: unless-stopped
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_storage:/qdrant/storage
+
+  redis:
+    image: redis:7-alpine
+    container_name: cs_redis
+    restart: unless-stopped
+    ports:
+      - "6389:6379"
+
+  app:
+    build: .
+    container_name: cs_agent
+    depends_on:
+      - ollama
+      - qdrant
+      - redis
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_MODEL_NAME=qwen3:8b
+      - OLLAMA_EMBED_MODEL_NAME=embeddinggemma
+      - QDRANT_URL=http://qdrant:6333
+      - REDIS_URL=redis://redis:6379/0
+      - JSON_INPUT_DIR=/app/results/recognition_json
+      - CHUNKS_DIR=/app/chunks
+    volumes:
+      - ./results:/app/results:ro
+      - ./chunks:/app/chunks
+    ports:
+      - "8000:8000"
+
+  ingest:
+    build: .
+    container_name: cs_ingest
+    depends_on:
+      - ollama
+      - ollama-init
+      - qdrant
+      - redis
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_EMBED_MODEL_NAME=embeddinggemma
+      - QDRANT_URL=http://qdrant:6333
+      - REDIS_URL=redis://redis:6379/0
+      - JSON_INPUT_DIR=/app/results/recognition_json
+      - CHUNKS_DIR=/app/chunks
+    volumes:
+      - ./results:/app/results:ro
+      - ./chunks:/app/chunks
+    command: ["python", "-m", "app.ingestion.ingest"]
+    restart: "no"
+
+volumes:
+  qdrant_storage:
+  ollama_data:
